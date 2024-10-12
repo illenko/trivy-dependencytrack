@@ -1,0 +1,68 @@
+version: '3.7'
+
+volumes:
+  dependency-track:
+  postgres_data:
+  trivy-cache:
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: dtrack
+      POSTGRES_USER: dtrack
+      POSTGRES_PASSWORD: changeme
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+  dtrack-apiserver:
+    image: dependencytrack/apiserver
+    environment:
+      - ALPINE_DATABASE_MODE=external
+      - ALPINE_DATABASE_URL=jdbc:postgresql://postgres:5432/dtrack
+      - ALPINE_DATABASE_DRIVER=org.postgresql.Driver
+      - ALPINE_DATABASE_USERNAME=dtrack
+      - ALPINE_DATABASE_PASSWORD=changeme
+      - ALPINE_DATABASE_POOL_ENABLED=true
+      - ALPINE_DATABASE_POOL_MAX_SIZE=20
+      - ALPINE_DATABASE_POOL_MIN_IDLE=10
+      - ALPINE_DATABASE_POOL_IDLE_TIMEOUT=300000
+      - ALPINE_DATABASE_POOL_MAX_LIFETIME=600000
+    deploy:
+      resources:
+        limits:
+          memory: 12288m
+        reservations:
+          memory: 8192m
+      restart_policy:
+        condition: on-failure
+    ports:
+      - '8081:8080'
+    volumes:
+      - 'dependency-track:/data'
+    restart: unless-stopped
+
+  dtrack-frontend:
+    image: dependencytrack/frontend
+    depends_on:
+      - dtrack-apiserver
+    environment:
+      - API_BASE_URL=http://localhost:8081
+    ports:
+      - "8085:8080"
+    restart: unless-stopped
+
+  trivy:
+    image: aquasec/trivy:latest
+    command:
+      - server
+      - --listen
+      - :8089
+      - --token
+      - yourAuthToken
+    volumes:
+      - "trivy-cache:/root/.cache/trivy"
+    restart: unless-stopped
+
